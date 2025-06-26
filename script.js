@@ -1,48 +1,90 @@
+/* main.js — bug-fix 2025-06-26 */
 
-function setPageLang(lang) {
-    currentLang = lang;
-    document.querySelectorAll('.line').forEach(line => {
-        const jp = line.querySelector('.jp');
-        const cn = line.querySelector('.cn');
-        const en = line.querySelector('.en');
-        line.removeAttribute('data-lang-toggle');
-        jp.classList.add('hidden');
-        cn.classList.add('hidden');
-        en.classList.add('hidden');
+let selectedLang   = 'jp';   // 当前选中的按钮  jp / cn / en
+let globalConverted = true;  // 页面是否已整体转换到 selectedLang
+let lastNonJpLang  = null;   // 最近一次点击的非日语按钮
+const TOAST_DURATION = 2000; // 2 秒
 
-        if (lang === 'jp') jp.classList.remove('hidden');
-        if (lang === 'cn') cn.classList.remove('hidden');
-        if (lang === 'en') en.classList.remove('hidden');
-    });
+/* —— 工具：让某行只显示指定语言 —— */
+function setLineLang(line, lang) {
+    const jp = line.querySelector('.jp');
+    const cn = line.querySelector('.cn');
+    const en = line.querySelector('.en');
+
+    jp.classList.add('hidden');
+    cn.classList.add('hidden');
+    en.classList.add('hidden');
+
+    if (lang === 'jp')      jp.classList.remove('hidden');
+    else if (lang === 'cn') cn.classList.remove('hidden');
+    else if (lang === 'en') en.classList.remove('hidden');
+
+    line.dataset.langState = lang; // 记录行状态
 }
-document.addEventListener('DOMContentLoaded', () => {
-    // 每行字幕点击逻辑
+
+/* —— 整页切换 —— */
+function convertAllLines(lang) {
+    document.querySelectorAll('.line').forEach(line => setLineLang(line, lang));
+    globalConverted = true;
+}
+
+/* —— Toast —— */
+function showToast() {
+    const toast = document.getElementById('toast');
+    toast.textContent = '下の内容をクリックすると個別に切り替えられます。もう一度ボタンを押すと全体を切り替えられます。';
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), TOAST_DURATION);
+}
+
+/* —— 顶部语言按钮点击 —— */
+function setPageLang(lang) {
+
+    /* ① 点击「日本語」按钮：永远整页日语 */
+    if (lang === 'jp') {
+        selectedLang = 'jp';
+        convertAllLines('jp');
+        return;
+    }
+
+    /* ② 之前在日语按钮状态（selectedLang==='jp'） */
+    if (selectedLang === 'jp') {
+        selectedLang    = lang;       // 记录当前目标
+        lastNonJpLang   = lang;
+        globalConverted = false;      // 尚未整页切换
+        showToast();                  // 只弹一次提示
+        return;
+    }
+
+    /* ③ 再次点同一个非日语按钮 */
+    if (selectedLang === lang) {
+        if (!globalConverted) convertAllLines(lang); // 第二次点击才整页转换
+        return;
+    }
+
+    /* ④ 从一种非日语切到另一种非日语 —— 立即整页切换 */
+    selectedLang  = lang;
+    lastNonJpLang = lang;
+    convertAllLines(lang);
+}
+
+/* —— 单行点击：jp ↔ 当前目标语言 —— */
+function initLineClick() {
     document.querySelectorAll('.line .text').forEach(textBlock => {
         textBlock.addEventListener('click', () => {
-            if (currentLang === 'jp') return; // 日语状态不响应点击
+            const line    = textBlock.closest('.line');
+            const current = line.dataset.langState || 'jp';
 
-            const line = textBlock.closest('.line');
-            const toggled = line.getAttribute('data-lang-toggle') === 'true';
-
-            const jp = textBlock.querySelector('.jp');
-            const cn = textBlock.querySelector('.cn');
-            const en = textBlock.querySelector('.en');
-
-            // 清除全部
-            jp.classList.add('hidden');
-            cn.classList.add('hidden');
-            en.classList.add('hidden');
-
-            if (toggled) {
-                // 切回当前语言
-                line.setAttribute('data-lang-toggle', 'false');
-                if (currentLang === 'cn') cn.classList.remove('hidden');
-                else if (currentLang === 'en') en.classList.remove('hidden');
+            /* 当前行是日语 → 切到目标语言 */
+            if (current === 'jp') {
+                const target = (selectedLang === 'jp') ? lastNonJpLang : selectedLang;
+                if (target) setLineLang(line, target);
             } else {
-                // 切成日语
-                line.setAttribute('data-lang-toggle', 'true');
-                jp.classList.remove('hidden');
+                /* 当前行是非日语 → 切回日语 */
+                setLineLang(line, 'jp');
             }
         });
     });
-});
+}
+
+/* —— 初始绑定 —— */
+document.addEventListener('DOMContentLoaded', initLineClick);

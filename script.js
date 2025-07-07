@@ -1,90 +1,92 @@
-/* main.js — bug-fix 2025-06-26 */
+/* =============================== main.js =============================== */
+/* 语言切换脚本（2025-07-07）                                             */
+/* ---------------------------------------------------------------------- */
 
-let selectedLang   = 'jp';   // 当前选中的按钮  jp / cn / en
-let globalConverted = true;  // 页面是否已整体转换到 selectedLang
-let lastNonJpLang  = null;   // 最近一次点击的非日语按钮
-const TOAST_DURATION = 2000; // 2 秒
+/* ----------- 全局状态（挂到 window，便于 inline onclick 调用） ----------- */
+window.selectedLang    = 'jp';   // 顶部按钮当前语言：'jp' / 'cn' / 'en'
+window.globalConverted = true;   // 是否已经整页切换过
+window.lastNonJpLang   = null;   // 最近一次点击的非日语按钮
+const TOAST_DURATION   = 2000;   // Toast 显示 2 秒
 
-/* —— 工具：让某行只显示指定语言 —— */
-function setLineLang(line, lang) {
-    const jp = line.querySelector('.jp');
-    const cn = line.querySelector('.cn');
-    const en = line.querySelector('.en');
-
-    jp.classList.add('hidden');
-    cn.classList.add('hidden');
-    en.classList.add('hidden');
-
-    if (lang === 'jp')      jp.classList.remove('hidden');
-    else if (lang === 'cn') cn.classList.remove('hidden');
-    else if (lang === 'en') en.classList.remove('hidden');
-
-    line.dataset.langState = lang; // 记录行状态
+/* ---------------- 工具：让某一句（.text）只显示指定语言 ---------------- */
+function setTextLang(textEl, lang) {
+    textEl.querySelectorAll('.jp, .cn, .en').forEach(span => {
+        span.classList.toggle('hidden', !span.classList.contains(lang));
+    });
+    /* 记录当前句子的语言状态，供点击时判断 */
+    textEl.dataset.langState = lang;
 }
 
-/* —— 整页切换 —— */
-function convertAllLines(lang) {
-    document.querySelectorAll('.line').forEach(line => setLineLang(line, lang));
-    globalConverted = true;
+/* ------------------------ 整页切换到指定语言 --------------------------- */
+function convertAllTexts(lang) {
+    document.querySelectorAll('.text').forEach(t => setTextLang(t, lang));
+    window.globalConverted = true;
 }
 
-/* —— Toast —— */
+/* ------------------------------- Toast -------------------------------- */
 function showToast() {
     const toast = document.getElementById('toast');
-    toast.textContent = '下の内容をクリックすると個別に切り替えられます。もう一度ボタンを押すと全体を切り替えられます。';
+    if (!toast) return;
+
+    toast.textContent =
+        '下の内容をクリックすると個別に切り替えられます。もう一度ボタンを押すと全体を切り替えられます。';
     toast.classList.remove('hidden');
     setTimeout(() => toast.classList.add('hidden'), TOAST_DURATION);
 }
 
-/* —— 顶部语言按钮点击 —— */
-function setPageLang(lang) {
-
-    /* ① 点击「日本語」按钮：永远整页日语 */
+/* ------------------------ 顶部语言按钮点击 ----------------------------- */
+/* 由于按钮写了 inline onclick="setPageLang('cn')"，必须显式挂到 window   */
+window.setPageLang = function (lang) {
+    /* ① 点击“日本語”按钮 —— 立即整页日语 */
     if (lang === 'jp') {
-        selectedLang = 'jp';
-        convertAllLines('jp');
+        window.selectedLang = 'jp';
+        convertAllTexts('jp');
         return;
     }
 
-    /* ② 之前在日语按钮状态（selectedLang==='jp'） */
-    if (selectedLang === 'jp') {
-        selectedLang    = lang;       // 记录当前目标
-        lastNonJpLang   = lang;
-        globalConverted = false;      // 尚未整页切换
-        showToast();                  // 只弹一次提示
+    /* ② 之前在日语模式下第一次点非日语按钮 —— 只提示，不全局切换 */
+    if (window.selectedLang === 'jp') {
+        window.selectedLang  = lang;
+        window.lastNonJpLang = lang;
+        window.globalConverted = false;
+        showToast();
         return;
     }
 
-    /* ③ 再次点同一个非日语按钮 */
-    if (selectedLang === lang) {
-        if (!globalConverted) convertAllLines(lang); // 第二次点击才整页转换
+    /* ③ 再次点同一个非日语按钮 —— 第二下才整页切换 */
+    if (window.selectedLang === lang) {
+        if (!window.globalConverted) convertAllTexts(lang);
         return;
     }
 
-    /* ④ 从一种非日语切到另一种非日语 —— 立即整页切换 */
-    selectedLang  = lang;
-    lastNonJpLang = lang;
-    convertAllLines(lang);
-}
+    /* ④ 在两种非日语按钮之间切换 —— 直接整页切换 */
+    window.selectedLang  = lang;
+    window.lastNonJpLang = lang;
+    convertAllTexts(lang);
+};
 
-/* —— 单行点击：jp ↔ 当前目标语言 —— */
-function initLineClick() {
-    document.querySelectorAll('.line .text').forEach(textBlock => {
-        textBlock.addEventListener('click', () => {
-            const line    = textBlock.closest('.line');
-            const current = line.dataset.langState || 'jp';
+/* --------------------- 事件委托：点击某一句字幕 ------------------------ */
+document.addEventListener('click', e => {
+    const textEl = e.target.closest('.text');
+    if (!textEl) return;                       // 没点在句子块上
 
-            /* 当前行是日语 → 切到目标语言 */
-            if (current === 'jp') {
-                const target = (selectedLang === 'jp') ? lastNonJpLang : selectedLang;
-                if (target) setLineLang(line, target);
-            } else {
-                /* 当前行是非日语 → 切回日语 */
-                setLineLang(line, 'jp');
-            }
-        });
-    });
-}
+    const current = textEl.dataset.langState || 'jp';
 
-/* —— 初始绑定 —— */
-document.addEventListener('DOMContentLoaded', initLineClick);
+    /* 当前句子是日语 → 切到目标语言 */
+    if (current === 'jp') {
+        const target = (window.selectedLang === 'jp')
+            ? window.lastNonJpLang
+            : window.selectedLang;
+        if (target) setTextLang(textEl, target);
+    } else {
+        /* 当前句子是非日语 → 切回日语 */
+        setTextLang(textEl, 'jp');
+    }
+});
+
+/* ------------------- 初始：页面加载即是全日语 --------------------------- */
+/* .cn .en 默认带 .hidden，故无需额外处理；此段代码仅留作占位 */
+document.addEventListener('DOMContentLoaded', () => {
+    /* 若想页面一进来就高亮“日本語”按钮，可在此处加 active 状态逻辑 */
+});
+/* ============================ end of main.js =========================== */
